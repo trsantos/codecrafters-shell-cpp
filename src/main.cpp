@@ -1,9 +1,40 @@
+#include <cstdlib>
 #include <iostream>
-#include <ostream>
+#include <filesystem>
+#include <sstream>
 #include <string>
 #include <unordered_set>
+#include <vector>
+#include <unistd.h>
 
 using namespace std;
+namespace fs = filesystem;
+
+bool should_exit(const istream &is, const string &cmd,
+                 const vector<string> &args) {
+    if (is.eof()) {
+        cout << endl;
+        return true;
+    }
+
+    return cmd == "exit" && args[0] == "0";
+}
+
+string get_cmd_file_path(const string &cmd) {
+    auto path_ss = stringstream(getenv("PATH"));
+    string dir;
+
+    while (getline(path_ss, dir, ':')) {
+        fs::path full_path = dir + "/" + cmd;
+        if (fs::is_regular_file(full_path)) {
+            auto perms = fs::status(full_path).permissions();
+            if (fs::perms::none != (perms & fs::perms::owner_exec))
+                return full_path;
+        }
+    }
+
+    return "";
+}
 
 int main() {
     // Flush after every std::cout / std:cerr
@@ -14,22 +45,46 @@ int main() {
 
     while (true) {
         cout << "$ ";
-        string input;
-        getline(cin, input);
 
-        if (cin.eof() || input == "exit 0")
-            break;
-        else if (input.starts_with("type ")) {
-            auto cmd = input.substr(5);
-            if (builtins.contains(cmd))
-                cout << cmd << " is a shell builtin" << endl;
-            else
-                cout << cmd << ": not found" << endl;
+        string line, command;
+        vector<string> args;
+
+        getline(cin, line);
+
+        auto input_ss = stringstream(line);
+
+        input_ss >> command;
+        while (input_ss) {
+            string arg;
+            input_ss >> arg;
+            args.push_back(arg);
         }
-        else if (input.starts_with("echo "))
-            cout << input.substr(5) << endl;
-        else
-            cout << input << ": command not found" << endl;
+
+        if (should_exit(cin, command, args))
+            break;
+
+        if (command == "type") {
+            auto name = args[0];
+
+            if (builtins.contains(name)) {
+                cout << name << " is a shell builtin" << endl;
+                continue;
+            }
+
+            string file_path = get_cmd_file_path(name);
+
+            if (!file_path.empty())
+                cout << name << " is " << file_path << endl;
+            else
+                cout << name << ": not found" << endl;
+
+        } else if (command == "echo") {
+            for (auto &arg : args)
+                cout << arg << " ";
+            cout << endl;
+        } else {
+            cout << command << ": command not found" << endl;
+        }
     }
 
     return 0;
