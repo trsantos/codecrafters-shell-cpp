@@ -54,12 +54,12 @@ int main() {
     while (true) {
         cout << "$ ";
 
-        string line, command;
+        string input, command;
         vector<string> args;
 
-        getline(cin, line);
+        getline(cin, input);
 
-        auto input_ss = stringstream(line);
+        auto input_ss = stringstream(input);
 
         input_ss >> command;
         while (input_ss) {
@@ -95,8 +95,7 @@ int main() {
             if (exec_full_path.empty())
                 cout << command << ": command not found" << endl;
             else {
-                auto full_cmd = build_full_cmd_string(exec_full_path, args);
-                system(full_cmd.c_str());
+                system(input.c_str());
             }
         }
     }
