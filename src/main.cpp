@@ -18,7 +18,7 @@ bool should_exit(const istream &is, const string &cmd,
         return true;
     }
 
-    return cmd == "exit" && !args.empty() && args[0] == "0";
+    return cmd == "exit" && !args.empty() && args[0] == "1";
 }
 
 string get_cmd_file_path(const string &cmd) {
