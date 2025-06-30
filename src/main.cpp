@@ -36,6 +36,14 @@ string get_cmd_file_path(const string &cmd) {
     return "";
 }
 
+string build_full_cmd_string(const string &cmd, const vector<string> &args) {
+    string arg_string;
+    for (auto &arg : args) {
+        arg_string += " " + arg;
+    }
+    return cmd + arg_string;
+}
+
 int main() {
     // Flush after every std::cout / std:cerr
     cout << unitbuf;
@@ -83,7 +91,13 @@ int main() {
                 cout << arg << " ";
             cout << endl;
         } else {
-            cout << command << ": command not found" << endl;
+            auto exec_full_path = get_cmd_file_path(command);
+            if (exec_full_path.empty())
+                cout << command << ": command not found" << endl;
+            else {
+                auto full_cmd = build_full_cmd_string(exec_full_path, args);
+                system(full_cmd.c_str());
+            }
         }
     }
 
