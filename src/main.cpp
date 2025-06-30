@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <vector>
 #include <unistd.h>
+#include <sys/wait.h>
 
 using namespace std;
 namespace fs = filesystem;
@@ -17,7 +18,7 @@ bool should_exit(const istream &is, const string &cmd,
         return true;
     }
 
-    return cmd == "exit" && args[0] == "0";
+    return cmd == "exit" && !args.empty() && args[0] == "0";
 }
 
 string get_cmd_file_path(const string &cmd) {
@@ -34,6 +35,26 @@ string get_cmd_file_path(const string &cmd) {
     }
 
     return "";
+}
+
+void exec(const string &cmd, const vector<string> &args) {
+    vector<char *> argv;
+    argv.reserve(args.size() + 2);
+    argv.push_back(const_cast<char *>(cmd.c_str()));
+    for (auto &arg : args)
+        argv.push_back(const_cast<char *>(arg.c_str()));
+    argv.push_back(nullptr);
+
+    auto pid = fork();
+
+    if (pid == 0) {
+        execvp(cmd.c_str(), argv.data());
+        perror("exec failed");
+        _exit(1);
+    } else {
+        int status;
+        waitpid(pid, &status, 0);
+    }
 }
 
 int main() {
@@ -54,11 +75,10 @@ int main() {
         auto input_ss = stringstream(input);
 
         input_ss >> command;
-        while (input_ss) {
-            string arg;
-            input_ss >> arg;
+
+        string arg;
+        while (input_ss >> arg)
             args.push_back(arg);
-        }
 
         if (should_exit(cin, command, args))
             break;
@@ -85,7 +105,7 @@ int main() {
         } else if (get_cmd_file_path(command).empty()) {
             cout << command << ": command not found" << endl;
         } else {
-            system(input.c_str());
+            exec(command, args);
         }
     }
 
