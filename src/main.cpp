@@ -18,7 +18,7 @@ bool should_exit(const istream &is, const string &cmd,
         return true;
     }
 
-    return cmd == "exit" && !args.empty() && args[0] == "1";
+    return cmd == "exit" && !args.empty() && args[0] == "0";
 }
 
 string get_cmd_file_path(const string &cmd) {
@@ -35,6 +35,10 @@ string get_cmd_file_path(const string &cmd) {
     }
 
     return "";
+}
+
+auto get_current_path() {
+    return string(fs::current_path());
 }
 
 void exec(const string &cmd, const vector<string> &args) {
@@ -62,7 +66,7 @@ int main() {
     cout << unitbuf;
     cerr << unitbuf;
 
-    unordered_set<string> builtins = {"echo", "exit", "type"};
+    unordered_set<string> builtins = {"echo", "exit", "pwd", "type"};
 
     while (true) {
         cout << "$ ";
@@ -102,6 +106,8 @@ int main() {
             for (auto &arg : args)
                 cout << arg << " ";
             cout << endl;
+        } else if (command == "pwd") {
+            cout << get_current_path() << endl;
         } else if (get_cmd_file_path(command).empty()) {
             cout << command << ": command not found" << endl;
         } else {
