@@ -1,12 +1,12 @@
 #include <cstdlib>
-#include <iostream>
 #include <filesystem>
+#include <iostream>
 #include <sstream>
 #include <string>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <unordered_set>
 #include <vector>
-#include <unistd.h>
-#include <sys/wait.h>
 
 using namespace std;
 namespace fs = filesystem;
@@ -37,8 +37,12 @@ string get_cmd_file_path(const string &cmd) {
     return "";
 }
 
-auto get_current_path() {
-    return string(fs::current_path());
+auto get_current_path() { return fs::current_path().string(); }
+
+bool set_current_path(fs::path &p) {
+    error_code ec;
+    fs::current_path(p, ec);
+    return !ec;
 }
 
 void exec(const string &cmd, const vector<string> &args) {
@@ -66,7 +70,7 @@ int main() {
     cout << unitbuf;
     cerr << unitbuf;
 
-    unordered_set<string> builtins = {"echo", "exit", "pwd", "type"};
+    unordered_set<string> builtins = {"cd", "echo", "exit", "pwd", "type"};
 
     while (true) {
         cout << "$ ";
@@ -101,7 +105,11 @@ int main() {
                 cout << name << " is " << file_path << endl;
             else
                 cout << name << ": not found" << endl;
-
+        } else if (command == "cd") {
+            fs::path p(args.size() ? args[0] : "~");
+            if (!set_current_path(p))
+                cout << "cd: " << p.string() << ": No such file or directory"
+                     << endl;
         } else if (command == "echo") {
             for (auto &arg : args)
                 cout << arg << " ";
