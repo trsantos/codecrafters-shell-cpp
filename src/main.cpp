@@ -92,6 +92,7 @@ int main() {
             break;
 
         if (command == "type") {
+
             auto name = args[0];
 
             if (builtins.contains(name)) {
@@ -105,21 +106,33 @@ int main() {
                 cout << name << " is " << file_path << endl;
             else
                 cout << name << ": not found" << endl;
+
         } else if (command == "cd") {
+
             fs::path p(args.size() ? args[0] : "~");
+            if (p == "~") p = getenv("HOME");
             if (!set_current_path(p))
                 cout << "cd: " << p.string() << ": No such file or directory"
                      << endl;
+
         } else if (command == "echo") {
+
             for (auto &arg : args)
                 cout << arg << " ";
             cout << endl;
+
         } else if (command == "pwd") {
+
             cout << get_current_path() << endl;
+
         } else if (get_cmd_file_path(command).empty()) {
+
             cout << command << ": command not found" << endl;
+
         } else {
+
             exec(command, args);
+
         }
     }
 
