@@ -1,5 +1,7 @@
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <ios>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -65,6 +67,32 @@ void exec(const string &cmd, const vector<string> &args) {
     }
 }
 
+vector<string> get_args(istringstream &is) {
+    char c;
+    string arg;
+    vector<string> args;
+    bool quoted = false;
+
+    while (is >> noskipws >> c) {
+        if (c == '\'') {
+            quoted = !quoted;
+            continue;
+        }
+
+        if (quoted || !isspace(c))
+            arg.push_back(c);
+        else if (isspace(c) && !arg.empty()) {
+            args.push_back(arg);
+            arg.clear();
+        }
+    }
+
+    if (!arg.empty())
+        args.push_back(arg);
+
+    return args;
+}
+
 int main() {
     // Flush after every std::cout / std:cerr
     cout << unitbuf;
@@ -75,23 +103,18 @@ int main() {
     while (true) {
         cout << "$ ";
 
-        string input, command;
-        vector<string> args;
+        string input, cmd;
 
         getline(cin, input);
 
-        auto input_ss = stringstream(input);
+        auto iss = istringstream(input);
+        iss >> cmd;
+        vector<string> args = get_args(iss);
 
-        input_ss >> command;
-
-        string arg;
-        while (input_ss >> arg)
-            args.push_back(arg);
-
-        if (should_exit(cin, command, args))
+        if (should_exit(cin, cmd, args))
             break;
 
-        if (command == "type") {
+        if (cmd == "type") {
 
             auto name = args[0];
 
@@ -107,7 +130,7 @@ int main() {
             else
                 cout << name << ": not found" << endl;
 
-        } else if (command == "cd") {
+        } else if (cmd == "cd") {
 
             fs::path p(args.size() ? args[0] : "~");
             if (p == "~") p = getenv("HOME");
@@ -115,23 +138,23 @@ int main() {
                 cout << "cd: " << p.string() << ": No such file or directory"
                      << endl;
 
-        } else if (command == "echo") {
+        } else if (cmd == "echo") {
 
             for (auto &arg : args)
                 cout << arg << " ";
             cout << endl;
 
-        } else if (command == "pwd") {
+        } else if (cmd == "pwd") {
 
             cout << get_current_path() << endl;
 
-        } else if (get_cmd_file_path(command).empty()) {
+        } else if (get_cmd_file_path(cmd).empty()) {
 
-            cout << command << ": command not found" << endl;
+            cout << cmd << ": command not found" << endl;
 
         } else {
 
-            exec(command, args);
+            exec(cmd, args);
 
         }
     }
