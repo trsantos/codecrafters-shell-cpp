@@ -76,12 +76,9 @@ vector<string> get_args(istringstream &is) {
     while (is >> noskipws >> c) {
         if (c == '\'') {
             quoted = !quoted;
-            continue;
-        }
-
-        if (quoted || !isspace(c))
-            arg.push_back(c);
-        else if (isspace(c) && !arg.empty()) {
+        } else if (quoted || !isspace(c)) {
+            arg += c;
+        } else if (!arg.empty()) {
             args.push_back(arg);
             arg.clear();
         }
