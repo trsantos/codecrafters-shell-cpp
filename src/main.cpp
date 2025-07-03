@@ -68,9 +68,9 @@ void exec(const string &cmd, const vector<string> &args) {
 }
 
 vector<string> get_args(istringstream &is) {
-    char c;
-    string arg;
     vector<string> args;
+    string arg;
+    char c;
     bool quoted = false;
 
     while (is >> noskipws >> c) {
