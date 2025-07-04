@@ -71,12 +71,15 @@ vector<string> get_args(istringstream &is) {
     vector<string> args;
     string arg;
     char c;
-    bool quoted = false;
+    bool single_quoted = false;
+    bool double_quoted = false;
 
     while (is >> noskipws >> c) {
-        if (c == '\'') {
-            quoted = !quoted;
-        } else if (quoted || !isspace(c)) {
+        if (c == '\'' && !double_quoted) {
+            single_quoted = !single_quoted;
+        } else if (c == '"' && !single_quoted) {
+            double_quoted = !double_quoted;
+        } else if (single_quoted || double_quoted || !isspace(c)) {
             arg += c;
         } else if (!arg.empty()) {
             args.push_back(arg);
@@ -130,7 +133,8 @@ int main() {
         } else if (cmd == "cd") {
 
             fs::path p(args.size() ? args[0] : "~");
-            if (p == "~") p = getenv("HOME");
+            if (p == "~")
+                p = getenv("HOME");
             if (!set_current_path(p))
                 cout << "cd: " << p.string() << ": No such file or directory"
                      << endl;
@@ -152,7 +156,6 @@ int main() {
         } else {
 
             exec(cmd, args);
-
         }
     }
 
