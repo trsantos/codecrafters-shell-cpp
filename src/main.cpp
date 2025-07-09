@@ -76,7 +76,7 @@ vector<string> get_args(istringstream &is) {
     bool escaped = false;
 
     while (is >> noskipws >> c) {
-        if (c == '\\' && !(single_quoted || double_quoted)) {
+        if (c == '\\' && !single_quoted && !double_quoted) {
             escaped = true;
         } else if (escaped) {
             arg += c;
