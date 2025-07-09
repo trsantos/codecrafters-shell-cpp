@@ -73,9 +73,15 @@ vector<string> get_args(istringstream &is) {
     char c;
     bool single_quoted = false;
     bool double_quoted = false;
+    bool escaped = false;
 
     while (is >> noskipws >> c) {
-        if (c == '\'' && !double_quoted) {
+        if (c == '\\' && !(single_quoted || double_quoted)) {
+            escaped = true;
+        } else if (escaped) {
+            arg += c;
+            escaped = false;
+        } else if (c == '\'' && !double_quoted) {
             single_quoted = !single_quoted;
         } else if (c == '"' && !single_quoted) {
             double_quoted = !double_quoted;
