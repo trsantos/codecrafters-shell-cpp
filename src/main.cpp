@@ -75,10 +75,14 @@ vector<string> get_args(istringstream &is) {
     bool double_quoted = false;
     bool escaped = false;
 
+    string double_quoted_escaped_chars = {'\\', '\"'};
+
     while (is >> noskipws >> c) {
-        if (c == '\\' && !single_quoted && !double_quoted) {
+        if (c == '\\' && !single_quoted && !escaped) {
             escaped = true;
         } else if (escaped) {
+            if (double_quoted && !double_quoted_escaped_chars.contains(c))
+                arg += '\\';
             arg += c;
             escaped = false;
         } else if (c == '\'' && !double_quoted) {
