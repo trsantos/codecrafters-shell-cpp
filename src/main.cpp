@@ -67,7 +67,7 @@ void exec(const string &cmd, const vector<string> &args) {
     }
 }
 
-vector<string> get_args(istringstream &is) {
+pair<string, vector<string>> parse_args(istringstream &iss) {
     vector<string> args;
     string arg;
     char c;
@@ -77,7 +77,7 @@ vector<string> get_args(istringstream &is) {
 
     string double_quoted_escaped_chars = {'\\', '\"'};
 
-    while (is >> noskipws >> c) {
+    while (iss >> noskipws >> c) {
         if (escaped) {
             if (double_quoted && !double_quoted_escaped_chars.contains(c))
                 arg += '\\';
@@ -100,7 +100,7 @@ vector<string> get_args(istringstream &is) {
     if (!arg.empty())
         args.push_back(arg);
 
-    return args;
+    return {args[0], {args.begin() + 1, args.end()}};
 }
 
 int main() {
@@ -113,13 +113,12 @@ int main() {
     while (true) {
         cout << "$ ";
 
-        string input, cmd;
+        string input;
 
         getline(cin, input);
 
         auto iss = istringstream(input);
-        iss >> cmd;
-        vector<string> args = get_args(iss);
+        auto [cmd, args] = parse_args(iss);
 
         if (should_exit(cin, cmd, args))
             break;
