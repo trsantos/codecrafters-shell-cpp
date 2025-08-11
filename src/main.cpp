@@ -1,8 +1,11 @@
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <ios>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <sys/wait.h>
@@ -13,8 +16,7 @@
 using namespace std;
 namespace fs = filesystem;
 
-bool should_exit(const istream &is, const string &cmd,
-                 const vector<string> &args) {
+bool should_exit(const istream &is, const string &cmd, const vector<string> &args) {
     if (is.eof()) {
         cout << endl;
         return true;
@@ -47,24 +49,43 @@ bool set_current_path(fs::path &p) {
     return !ec;
 }
 
-void exec(const string &cmd, const vector<string> &args) {
-    vector<char *> argv;
-    argv.reserve(args.size() + 2);
-    argv.push_back(const_cast<char *>(cmd.c_str()));
-    for (auto &arg : args)
-        argv.push_back(const_cast<char *>(arg.c_str()));
-    argv.push_back(nullptr);
+void exec(const string &cmd, const vector<string> &args, ostream &out) {
+    int pipefd[2];
+    if (pipe(pipefd) == -1)
+        throw std::runtime_error("pipe failed");
 
-    auto pid = fork();
+    pid_t pid = fork();
+    if (pid == -1)
+        throw std::runtime_error("fork failed");
 
+    // Child
     if (pid == 0) {
+        close(pipefd[0]);               // close read end
+        dup2(pipefd[1], STDOUT_FILENO); // redirect stdout only
+        close(pipefd[1]);
+
+        std::vector<char *> argv;
+        argv.reserve(args.size() + 2);
+        argv.push_back(const_cast<char *>(cmd.c_str()));
+        for (auto &arg : args)
+            argv.push_back(const_cast<char *>(arg.c_str()));
+        argv.push_back(nullptr);
+
         execvp(cmd.c_str(), argv.data());
         perror("exec failed");
         _exit(1);
-    } else {
-        int status;
-        waitpid(pid, &status, 0);
     }
+
+    // Parent
+    close(pipefd[1]); // close write end
+    char buf[4096];
+    ssize_t n;
+    while ((n = read(pipefd[0], buf, sizeof(buf))) > 0)
+        out.write(buf, n);
+    close(pipefd[0]);
+
+    int status;
+    waitpid(pid, &status, 0);
 }
 
 pair<string, vector<string>> parse_args(istringstream &iss) {
@@ -100,7 +121,31 @@ pair<string, vector<string>> parse_args(istringstream &iss) {
     if (!arg.empty())
         args.push_back(arg);
 
+    if (args.empty())
+        return {};
+
     return {args[0], {args.begin() + 1, args.end()}};
+}
+
+ostream &get_output_stream(vector<string> &args) {
+    static unique_ptr<ofstream> file_stream;
+
+    auto it = ranges::find_if(args, [](auto &s) { return s == ">" || s == "1>"; });
+
+    if (it != args.end()) {
+        auto marker = *it;
+        file_stream = make_unique<ofstream>(*next(it), ofstream::out);
+        args.erase(it, args.end());
+        return *file_stream;
+    }
+
+    return cout;
+}
+
+void maybe_close(ostream &out) {
+    if (&out != &cout)
+        if (auto f = dynamic_cast<ofstream *>(&out))
+            f->close();
 }
 
 int main() {
@@ -120,6 +165,8 @@ int main() {
         auto iss = istringstream(input);
         auto [cmd, args] = parse_args(iss);
 
+        ostream &os = get_output_stream(args);
+
         if (should_exit(cin, cmd, args))
             break;
 
@@ -128,16 +175,16 @@ int main() {
             auto name = args[0];
 
             if (builtins.contains(name)) {
-                cout << name << " is a shell builtin" << endl;
+                os << name << " is a shell builtin" << endl;
                 continue;
             }
 
             string file_path = get_cmd_file_path(name);
 
             if (!file_path.empty())
-                cout << name << " is " << file_path << endl;
+                os << name << " is " << file_path << endl;
             else
-                cout << name << ": not found" << endl;
+                os << name << ": not found" << endl;
 
         } else if (cmd == "cd") {
 
@@ -145,26 +192,26 @@ int main() {
             if (p == "~")
                 p = getenv("HOME");
             if (!set_current_path(p))
-                cout << "cd: " << p.string() << ": No such file or directory"
-                     << endl;
+                os << "cd: " << p.string() << ": No such file or directory" << endl;
 
         } else if (cmd == "echo") {
 
             for (auto &arg : args)
-                cout << arg << " ";
-            cout << endl;
+                os << arg << " ";
+            os << endl;
 
         } else if (cmd == "pwd") {
 
-            cout << get_current_path() << endl;
+            os << get_current_path() << endl;
 
         } else if (get_cmd_file_path(cmd).empty()) {
 
-            cout << cmd << ": command not found" << endl;
+            os << cmd << ": command not found" << endl;
 
         } else {
 
-            exec(cmd, args);
+            exec(cmd, args, os);
+            maybe_close(os);
         }
     }
 

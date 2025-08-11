@@ -1,0 +1,10 @@
+build
+CMakeLists.txt
+codecrafters.yml
+hi
+README.md
+src
+test_file
+vcpkg-configuration.json
+vcpkg.json
+your_program.sh
