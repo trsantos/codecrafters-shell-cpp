@@ -211,8 +211,9 @@ int main() {
         } else {
 
             exec(cmd, args, os);
-            maybe_close(os);
         }
+
+        maybe_close(os);
     }
 
     return 0;
