@@ -141,7 +141,7 @@ pair<string, vector<string>> parse_args(istringstream &iss) {
     return {args[0], {args.begin() + 1, args.end()}};
 }
 
-void discard_redirection_args(vector<string> &args, const vector<string> &operators = {">", "1>", "2>"}) {
+void discard_redirection_args(vector<string> &args, const vector<string> &operators = {">", "1>", ">>", "1>>", "2>"}) {
     auto pred = [&operators](const auto &s) { return ranges::find(operators, s) != operators.end(); };
     auto it = ranges::find_if(args, pred);
 
@@ -156,14 +156,18 @@ ostream &get_redirection_stream(const vector<string> &args, const vector<string>
     auto it = ranges::find_if(args, pred);
 
     if (it != args.end()) {
-        file_stream = make_unique<ofstream>(*next(it), ofstream::out);
+        bool append_mode = (*it == ">>" || *it == "1>>");
+        auto mode = append_mode ? (ofstream::out | ofstream::app) : ofstream::out;
+        file_stream = make_unique<ofstream>(*next(it), mode);
         return *file_stream;
     }
 
     return default_stream;
 }
 
-ostream &get_output_stream(const vector<string> &args) { return get_redirection_stream(args, {">", "1>"}, cout); }
+ostream &get_output_stream(const vector<string> &args) {
+    return get_redirection_stream(args, {">", "1>", ">>", "1>>"}, cout);
+}
 
 ostream &get_error_stream(const vector<string> &args) { return get_redirection_stream(args, {"2>"}, cerr); }
 
