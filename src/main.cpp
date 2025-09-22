@@ -3,9 +3,11 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <ios>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 #include <sys/wait.h>
@@ -22,20 +24,42 @@ bool should_exit(const string &cmd, const vector<string> &args) {
     return cmd == "exit" && !args.empty() && args[0] == "0";
 }
 
-string get_cmd_file_path(const string &cmd) {
-    auto path_ss = stringstream(getenv("PATH"));
-    string dir;
+void scan_path_executables(const string& prefix, function<bool(const string&, const string&)> callback) {
+    if (const char* path_env = getenv("PATH")) {
+        auto path_ss = stringstream(path_env);
+        string dir;
 
-    while (getline(path_ss, dir, ':')) {
-        fs::path full_path = dir + "/" + cmd;
-        if (fs::is_regular_file(full_path)) {
-            auto perms = fs::status(full_path).permissions();
-            if (fs::perms::none != (perms & fs::perms::owner_exec))
-                return full_path;
+        while (getline(path_ss, dir, ':')) {
+            error_code ec;
+            for (const auto& entry : fs::directory_iterator(dir, ec)) {
+                if (ec) break;
+
+                if (entry.is_regular_file(ec) && !ec) {
+                    string filename = entry.path().filename().string();
+                    if (filename.starts_with(prefix)) {
+                        auto perms = fs::status(entry.path(), ec).permissions();
+                        if (!ec && fs::perms::none != (perms & fs::perms::owner_exec)) {
+                            if (callback(filename, entry.path().string())) {
+                                return; // Early exit if callback returns true
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
+}
 
-    return "";
+string get_cmd_file_path(const string &cmd) {
+    string result;
+    scan_path_executables(cmd, [&](const string& filename, const string& full_path) {
+        if (filename == cmd) {
+            result = full_path;
+            return true; // Found exact match, stop scanning
+        }
+        return false;
+    });
+    return result;
 }
 
 auto get_current_path() { return fs::current_path().string(); }
@@ -178,26 +202,34 @@ void maybe_close(ostream &stream, ostream &default_stream) {
 // Tab completion functionality
 const unordered_set<string>* current_builtins = nullptr;
 
-char* builtin_generator(const char* text, int state) {
-    static vector<string> matches;
-    static size_t match_index;
+char* command_generator(const char* text, int state) {
+    static set<string> matches;
+    static set<string>::iterator match_iter;
 
     if (!state) {
         matches.clear();
-        match_index = 0;
+        string prefix(text);
 
+        // Add builtin commands that match the prefix
         if (current_builtins) {
-            string prefix(text);
             for (const auto& builtin : *current_builtins) {
                 if (builtin.starts_with(prefix)) {
-                    matches.push_back(builtin);
+                    matches.insert(builtin);
                 }
             }
         }
+
+        // Add external executable commands from PATH
+        scan_path_executables(prefix, [&](const string& filename, const string& full_path) {
+            matches.insert(filename);
+            return false; // Continue scanning for all matches
+        });
+
+        match_iter = matches.begin();
     }
 
-    if (match_index < matches.size()) {
-        return strdup(matches[match_index++].c_str());
+    if (match_iter != matches.end()) {
+        return strdup((match_iter++)->c_str());
     }
 
     return nullptr;
@@ -207,7 +239,7 @@ char** command_completion(const char* text, int start, int end) {
     rl_attempted_completion_over = 1;
 
     if (start == 0) {
-        return rl_completion_matches(text, builtin_generator);
+        return rl_completion_matches(text, command_generator);
     }
 
     return nullptr;
