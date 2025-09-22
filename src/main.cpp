@@ -12,16 +12,13 @@
 #include <unistd.h>
 #include <unordered_set>
 #include <vector>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 using namespace std;
 namespace fs = filesystem;
 
-bool should_exit(const istream &is, const string &cmd, const vector<string> &args) {
-    if (is.eof()) {
-        cout << endl;
-        return true;
-    }
-
+bool should_exit(const string &cmd, const vector<string> &args) {
     return cmd == "exit" && !args.empty() && args[0] == "0";
 }
 
@@ -178,6 +175,49 @@ void maybe_close(ostream &stream, ostream &default_stream) {
             f->close();
 }
 
+// Tab completion functionality
+const unordered_set<string>* current_builtins = nullptr;
+
+char* builtin_generator(const char* text, int state) {
+    static vector<string> matches;
+    static size_t match_index;
+
+    if (!state) {
+        matches.clear();
+        match_index = 0;
+
+        if (current_builtins) {
+            string prefix(text);
+            for (const auto& builtin : *current_builtins) {
+                if (builtin.starts_with(prefix)) {
+                    matches.push_back(builtin);
+                }
+            }
+        }
+    }
+
+    if (match_index < matches.size()) {
+        return strdup(matches[match_index++].c_str());
+    }
+
+    return nullptr;
+}
+
+char** command_completion(const char* text, int start, int end) {
+    rl_attempted_completion_over = 1;
+
+    if (start == 0) {
+        return rl_completion_matches(text, builtin_generator);
+    }
+
+    return nullptr;
+}
+
+void setup_completion(const unordered_set<string>& builtins) {
+    current_builtins = &builtins;
+    rl_attempted_completion_function = command_completion;
+}
+
 int main() {
     // Flush after every std::cout / std:cerr
     cout << unitbuf;
@@ -185,12 +225,18 @@ int main() {
 
     unordered_set<string> builtins = {"cd", "echo", "exit", "pwd", "type"};
 
+    setup_completion(builtins);
+
     while (true) {
-        cout << "$ ";
+        char* line = readline("$ ");
 
-        string input;
+        if (!line) {
+            cout << endl;
+            break;
+        }
 
-        getline(cin, input);
+        string input(line);
+        free(line);
 
         auto iss = istringstream(input);
         auto [cmd, args] = parse_args(iss);
@@ -199,7 +245,7 @@ int main() {
         ostream &err = get_error_stream(args);
         discard_redirection_args(args);
 
-        if (should_exit(cin, cmd, args))
+        if (should_exit(cmd, args))
             break;
 
         if (cmd == "type") {
