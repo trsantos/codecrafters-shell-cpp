@@ -320,15 +320,31 @@ void execute_builtin(const string &cmd, vector<string> &args, const unordered_se
         }
         out << endl;
     } else if (cmd == "history") {
-        int limit = history_length;
-        if (!args.empty()) {
-            limit = stoi(args[0]);
-        }
-        int start = max(1, history_length - limit + 1);
-        for (int i = start; i <= history_length; ++i) {
-            HIST_ENTRY *entry = history_get(i);
-            if (entry) {
-                out << format("    {}  {}\n", i, entry->line);
+        if (!args.empty() && args[0] == "-r" && args.size() > 1) {
+            // Read history from file
+            string filepath = args[1];
+            ifstream file(filepath);
+            if (file.is_open()) {
+                string line;
+                while (getline(file, line)) {
+                    if (!line.empty()) {
+                        add_history(line.c_str());
+                    }
+                }
+                file.close();
+            }
+        } else {
+            // Display history
+            int limit = history_length;
+            if (!args.empty()) {
+                limit = stoi(args[0]);
+            }
+            int start = max(1, history_length - limit + 1);
+            for (int i = start; i <= history_length; ++i) {
+                HIST_ENTRY *entry = history_get(i);
+                if (entry) {
+                    out << format("    {}  {}\n", i, entry->line);
+                }
             }
         }
     } else if (cmd == "pwd") {
