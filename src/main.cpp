@@ -489,7 +489,10 @@ int main() {
     using_history();
 
     // Load existing history file if it exists
-    string history_file = string(getenv("HOME") ? getenv("HOME") : "") + "/.shell_history";
+    // Use HISTFILE environment variable if set, otherwise default to ~/.shell_history
+    const char *histfile_env = getenv("HISTFILE");
+    string history_file = histfile_env ? string(histfile_env)
+                                       : string(getenv("HOME") ? getenv("HOME") : "") + "/.shell_history";
     read_history(history_file.c_str());
 
     // Track where current session starts (after loading persistent history)
