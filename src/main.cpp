@@ -319,6 +319,13 @@ void execute_builtin(const string &cmd, vector<string> &args, const unordered_se
             out << args[i];
         }
         out << endl;
+    } else if (cmd == "history") {
+        for (int i = 1; i <= history_length; ++i) {
+            HIST_ENTRY *entry = history_get(i);
+            if (entry) {
+                out << format("    {}  {}\n", i, entry->line);
+            }
+        }
     } else if (cmd == "pwd") {
         out << get_current_path() << endl;
     } else if (cmd == "type") {
@@ -417,7 +424,7 @@ int main() {
     cout << unitbuf;
     cerr << unitbuf;
 
-    unordered_set<string> builtins = {"cd", "echo", "exit", "pwd", "type"};
+    unordered_set<string> builtins = {"cd", "echo", "exit", "history", "pwd", "type"};
 
     setup_completion(builtins);
 
