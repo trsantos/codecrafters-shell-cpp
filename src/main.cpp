@@ -26,7 +26,7 @@ namespace fs = filesystem;
 int g_session_start = 0;
 
 // Type alias for builtin command functions
-using BuiltinFunc = function<void(vector<string>&, ostream&, ostream&)>;
+using BuiltinFunc = function<void(vector<string> &, ostream &, ostream &)>;
 
 bool should_exit(const string &cmd, const vector<string> &args) {
     return cmd == "exit" && !args.empty() && args[0] == "0";
@@ -210,9 +210,8 @@ void discard_redirection_args(vector<string> &args,
         args.erase(it, args.end());
 }
 
-ostream &get_redirection_stream(const vector<string> &args, const vector<string> &operators, ostream &default_stream) {
-    static unique_ptr<ofstream> file_stream;
-
+ostream &get_redirection_stream(const vector<string> &args, const vector<string> &operators, ostream &default_stream,
+                                unique_ptr<ofstream> &file_stream) {
     auto pred = [&operators](const auto &s) { return ranges::contains(operators, s); };
     auto it = ranges::find_if(args, pred);
 
@@ -227,10 +226,14 @@ ostream &get_redirection_stream(const vector<string> &args, const vector<string>
 }
 
 ostream &get_output_stream(const vector<string> &args) {
-    return get_redirection_stream(args, {">", "1>", ">>", "1>>"}, cout);
+    static unique_ptr<ofstream> stdout_stream;
+    return get_redirection_stream(args, {">", "1>", ">>", "1>>"}, cout, stdout_stream);
 }
 
-ostream &get_error_stream(const vector<string> &args) { return get_redirection_stream(args, {"2>", "2>>"}, cerr); }
+ostream &get_error_stream(const vector<string> &args) {
+    static unique_ptr<ofstream> stderr_stream;
+    return get_redirection_stream(args, {"2>", "2>>"}, cerr, stderr_stream);
+}
 
 void maybe_close(ostream &stream, ostream &default_stream) {
     if (&stream != &default_stream)
@@ -322,15 +325,14 @@ void builtin_cd(vector<string> &args, ostream &out, ostream &err) {
 
 void builtin_echo(vector<string> &args, ostream &out, ostream &err) {
     for (size_t i = 0; i < args.size(); ++i) {
-        if (i > 0) out << " ";
+        if (i > 0)
+            out << " ";
         out << args[i];
     }
     out << endl;
 }
 
-void builtin_pwd(vector<string> &args, ostream &out, ostream &err) {
-    out << get_current_path() << endl;
-}
+void builtin_pwd(vector<string> &args, ostream &out, ostream &err) { out << get_current_path() << endl; }
 
 void builtin_history(vector<string> &args, ostream &out, ostream &err) {
     static unordered_map<string, int> last_appended_position;
@@ -516,7 +518,7 @@ int main() {
     builtin_registry["history"] = builtin_history;
     // Note: exit is not in the registry because it's handled specially by should_exit()
     // but we need it for type command
-    builtin_registry["exit"] = [](vector<string>&, ostream&, ostream&) {};
+    builtin_registry["exit"] = [](vector<string> &, ostream &, ostream &) {};
 
     // Legacy set for compatibility (will be removed)
     unordered_set<string> builtins = {"cd", "echo", "exit", "history", "pwd", "type"};
@@ -529,8 +531,8 @@ int main() {
     // Load existing history file if it exists
     // Use HISTFILE environment variable if set, otherwise default to ~/.shell_history
     const char *histfile_env = getenv("HISTFILE");
-    string history_file = histfile_env ? string(histfile_env)
-                                       : string(getenv("HOME") ? getenv("HOME") : "") + "/.shell_history";
+    string history_file =
+        histfile_env ? string(histfile_env) : string(getenv("HOME") ? getenv("HOME") : "") + "/.shell_history";
     read_history(history_file.c_str());
 
     // Track where current session starts (after loading persistent history)
