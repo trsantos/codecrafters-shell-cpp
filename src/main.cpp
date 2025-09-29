@@ -21,6 +21,10 @@
 using namespace std;
 namespace fs = filesystem;
 
+// Global variable to track where the current session starts in history
+// (used by history -a to only append current session commands)
+int g_session_start = 0;
+
 bool should_exit(const string &cmd, const vector<string> &args) {
     return cmd == "exit" && !args.empty() && args[0] == "0";
 }
@@ -320,6 +324,8 @@ void execute_builtin(const string &cmd, vector<string> &args, const unordered_se
         }
         out << endl;
     } else if (cmd == "history") {
+        static unordered_map<string, int> last_appended_position;
+
         if (!args.empty() && args[0] == "-r" && args.size() > 1) {
             // Read history from file
             string filepath = args[1];
@@ -345,6 +351,23 @@ void execute_builtin(const string &cmd, vector<string> &args, const unordered_se
                     }
                 }
                 file.close();
+                last_appended_position[filepath] = history_length;
+            }
+        } else if (!args.empty() && args[0] == "-a" && args.size() > 1) {
+            // Append new history from current session to file
+            string filepath = args[1];
+            int start_pos = max(g_session_start, last_appended_position[filepath]) + 1;
+
+            ofstream file(filepath, ios::app);
+            if (file.is_open()) {
+                for (int i = start_pos; i <= history_length; ++i) {
+                    HIST_ENTRY *entry = history_get(i);
+                    if (entry) {
+                        file << entry->line << "\n";
+                    }
+                }
+                file.close();
+                last_appended_position[filepath] = history_length;
             }
         } else {
             // Display history
@@ -468,6 +491,9 @@ int main() {
     // Load existing history file if it exists
     string history_file = string(getenv("HOME") ? getenv("HOME") : "") + "/.shell_history";
     read_history(history_file.c_str());
+
+    // Track where current session starts (after loading persistent history)
+    g_session_start = history_length;
 
     while (true) {
         char *line = readline("$ ");
