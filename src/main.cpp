@@ -1,12 +1,15 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <ios>
 #include <iostream>
 #include <memory>
+#include <readline/history.h>
+#include <readline/readline.h>
 #include <set>
 #include <sstream>
 #include <string>
@@ -14,8 +17,6 @@
 #include <unistd.h>
 #include <unordered_set>
 #include <vector>
-#include <readline/readline.h>
-#include <readline/history.h>
 
 using namespace std;
 namespace fs = filesystem;
@@ -24,15 +25,16 @@ bool should_exit(const string &cmd, const vector<string> &args) {
     return cmd == "exit" && !args.empty() && args[0] == "0";
 }
 
-void scan_path_executables(const string& prefix, function<bool(const string&, const string&)> callback) {
-    if (const char* path_env = getenv("PATH")) {
+void scan_path_executables(const string &prefix, function<bool(const string &, const string &)> callback) {
+    if (const char *path_env = getenv("PATH")) {
         auto path_ss = stringstream(path_env);
         string dir;
 
         while (getline(path_ss, dir, ':')) {
             error_code ec;
-            for (const auto& entry : fs::directory_iterator(dir, ec)) {
-                if (ec) break;
+            for (const auto &entry : fs::directory_iterator(dir, ec)) {
+                if (ec)
+                    break;
 
                 if (entry.is_regular_file(ec) && !ec) {
                     string filename = entry.path().filename().string();
@@ -52,7 +54,7 @@ void scan_path_executables(const string& prefix, function<bool(const string&, co
 
 string get_cmd_file_path(const string &cmd) {
     string result;
-    scan_path_executables(cmd, [&](const string& filename, const string& full_path) {
+    scan_path_executables(cmd, [&](const string &filename, const string &full_path) {
         if (filename == cmd) {
             result = full_path;
             return true; // Found exact match, stop scanning
@@ -123,9 +125,14 @@ void exec(const string &cmd, const vector<string> &args, ostream &out, ostream &
     waitpid(pid, &status, 0);
 }
 
-pair<string, vector<string>> parse_args(istringstream &iss) {
+struct Command {
+    string cmd;
     vector<string> args;
-    string arg;
+};
+
+vector<string> parse_tokens(istringstream &iss) {
+    vector<string> tokens;
+    string token;
     char c;
     bool single_quoted = false;
     bool double_quoted = false;
@@ -136,8 +143,8 @@ pair<string, vector<string>> parse_args(istringstream &iss) {
     while (iss >> noskipws >> c) {
         if (escaped) {
             if (double_quoted && !double_quoted_escaped_chars.contains(c))
-                arg += '\\';
-            arg += c;
+                token += '\\';
+            token += c;
             escaped = false;
         } else if (c == '\\' && !single_quoted) {
             escaped = true;
@@ -145,26 +152,51 @@ pair<string, vector<string>> parse_args(istringstream &iss) {
             single_quoted = !single_quoted;
         } else if (c == '"' && !single_quoted) {
             double_quoted = !double_quoted;
+        } else if (c == '|' && !single_quoted && !double_quoted) {
+            if (!token.empty()) {
+                tokens.push_back(token);
+                token.clear();
+            }
+            tokens.push_back("|");
         } else if (single_quoted || double_quoted || !isspace(c)) {
-            arg += c;
-        } else if (!arg.empty()) {
-            args.push_back(arg);
-            arg.clear();
+            token += c;
+        } else if (!token.empty()) {
+            tokens.push_back(token);
+            token.clear();
         }
     }
 
-    if (!arg.empty())
-        args.push_back(arg);
+    if (!token.empty())
+        tokens.push_back(token);
 
-    if (args.empty())
-        return {};
+    return tokens;
+}
 
-    return {args[0], {args.begin() + 1, args.end()}};
+vector<Command> parse_pipeline(const vector<string> &tokens) {
+    vector<Command> commands;
+    vector<string> current_args;
+
+    for (const auto &token : tokens) {
+        if (token == "|") {
+            if (!current_args.empty()) {
+                commands.push_back({current_args[0], {current_args.begin() + 1, current_args.end()}});
+                current_args.clear();
+            }
+        } else {
+            current_args.push_back(token);
+        }
+    }
+
+    if (!current_args.empty()) {
+        commands.push_back({current_args[0], {current_args.begin() + 1, current_args.end()}});
+    }
+
+    return commands;
 }
 
 void discard_redirection_args(vector<string> &args,
                               const vector<string> &operators = {">", "1>", ">>", "1>>", "2>", "2>>"}) {
-    auto pred = [&operators](const auto &s) { return ranges::find(operators, s) != operators.end(); };
+    auto pred = [&operators](const auto &s) { return ranges::contains(operators, s); };
     auto it = ranges::find_if(args, pred);
 
     if (it != args.end())
@@ -174,7 +206,7 @@ void discard_redirection_args(vector<string> &args,
 ostream &get_redirection_stream(const vector<string> &args, const vector<string> &operators, ostream &default_stream) {
     static unique_ptr<ofstream> file_stream;
 
-    auto pred = [&operators](const auto &s) { return ranges::find(operators, s) != operators.end(); };
+    auto pred = [&operators](const auto &s) { return ranges::contains(operators, s); };
     auto it = ranges::find_if(args, pred);
 
     if (it != args.end()) {
@@ -200,9 +232,9 @@ void maybe_close(ostream &stream, ostream &default_stream) {
 }
 
 // Tab completion functionality
-const unordered_set<string>* current_builtins = nullptr;
+const unordered_set<string> *current_builtins = nullptr;
 
-char* command_generator(const char* text, int state) {
+char *command_generator(const char *text, int state) {
     static set<string> matches;
     static set<string>::iterator match_iter;
 
@@ -212,7 +244,7 @@ char* command_generator(const char* text, int state) {
 
         // Add builtin commands that match the prefix
         if (current_builtins) {
-            for (const auto& builtin : *current_builtins) {
+            for (const auto &builtin : *current_builtins) {
                 if (builtin.starts_with(prefix)) {
                     matches.insert(builtin);
                 }
@@ -220,7 +252,7 @@ char* command_generator(const char* text, int state) {
         }
 
         // Add external executable commands from PATH
-        scan_path_executables(prefix, [&](const string& filename, const string& full_path) {
+        scan_path_executables(prefix, [&](const string &filename, const string &full_path) {
             matches.insert(filename);
             return false; // Continue scanning for all matches
         });
@@ -235,7 +267,7 @@ char* command_generator(const char* text, int state) {
     return nullptr;
 }
 
-char** command_completion(const char* text, int start, int end) {
+char **command_completion(const char *text, int start, int end) {
     rl_attempted_completion_over = 1;
 
     if (start == 0) {
@@ -245,9 +277,134 @@ char** command_completion(const char* text, int start, int end) {
     return nullptr;
 }
 
-void setup_completion(const unordered_set<string>& builtins) {
+void setup_completion(const unordered_set<string> &builtins) {
     current_builtins = &builtins;
     rl_attempted_completion_function = command_completion;
+}
+
+bool is_builtin(const string &cmd, const unordered_set<string> &builtins) { return builtins.contains(cmd); }
+
+void execute_builtin(const string &cmd, vector<string> &args, const unordered_set<string> &builtins,
+                     ostream &out = cout, ostream &err = cerr) {
+    if (cmd == "cd") {
+        fs::path p(args.size() ? args[0] : "~");
+        if (p == "~")
+            p = getenv("HOME");
+        if (!set_current_path(p))
+            out << "cd: " << p.string() << ": No such file or directory" << endl;
+    } else if (cmd == "echo") {
+        for (auto &arg : args)
+            out << arg << " ";
+        out << endl;
+    } else if (cmd == "pwd") {
+        out << get_current_path() << endl;
+    } else if (cmd == "type") {
+        auto name = args[0];
+        if (builtins.contains(name)) {
+            out << name << " is a shell builtin" << endl;
+        } else {
+            string file_path = get_cmd_file_path(name);
+            if (!file_path.empty())
+                out << name << " is " << file_path << endl;
+            else
+                out << name << ": not found" << endl;
+        }
+    }
+}
+
+void exec_pipeline(vector<Command> &commands, const unordered_set<string> &builtins) {
+    vector<int> pipes((commands.size() - 1) * 2);
+    vector<pid_t> pids(commands.size());
+
+    // Create inter-process pipes
+    for (size_t i = 0; i < commands.size() - 1; ++i) {
+        if (pipe(&pipes[i * 2]) == -1)
+            throw std::runtime_error("pipe failed");
+    }
+
+    // Fork each command
+    for (size_t i = 0; i < commands.size(); ++i) {
+        pids[i] = fork();
+        if (pids[i] == -1)
+            throw std::runtime_error("fork failed");
+
+        if (pids[i] == 0) {
+            // Child process
+
+            // Set up stdin from previous command's pipe
+            if (i > 0) {
+                dup2(pipes[(i - 1) * 2], STDIN_FILENO);
+            }
+
+            // Set up stdout to next command's pipe
+            if (i < commands.size() - 1) {
+                dup2(pipes[i * 2 + 1], STDOUT_FILENO);
+            }
+
+            // Close all pipe descriptors
+            for (size_t j = 0; j < pipes.size(); ++j) {
+                close(pipes[j]);
+            }
+
+            // Execute the command
+            const string &cmd = commands[i].cmd;
+            vector<string> &args = commands[i].args;
+
+            // Try builtin first
+            if (is_builtin(cmd, builtins)) {
+                execute_builtin(cmd, args, builtins);
+                _exit(0);
+            } else if (get_cmd_file_path(cmd).empty()) {
+                cout << cmd << ": command not found" << endl;
+                _exit(1);
+            } else {
+                // External command - handle file redirection using existing functions
+
+                // Use existing redirection functions
+                ostream &out = get_output_stream(args);
+                ostream &err = get_error_stream(args);
+
+                // Set up file descriptor redirection using native handles (C++26)
+                if (&out != &cout) {
+                    auto *file_stream = dynamic_cast<ofstream *>(&out);
+                    auto fd = file_stream->native_handle();
+                    dup2(fd, STDOUT_FILENO);
+                }
+
+                if (&err != &cerr) {
+                    auto *file_stream = dynamic_cast<ofstream *>(&err);
+                    auto fd = file_stream->native_handle();
+                    dup2(fd, STDERR_FILENO);
+                }
+
+                // Remove redirection arguments before exec
+                discard_redirection_args(args);
+
+                // Build argv
+                vector<char *> argv;
+                argv.reserve(args.size() + 2);
+                argv.push_back(const_cast<char *>(cmd.c_str()));
+                for (auto &arg : args)
+                    argv.push_back(const_cast<char *>(arg.c_str()));
+                argv.push_back(nullptr);
+
+                // Execute command
+                execvp(cmd.c_str(), argv.data());
+                perror("exec failed");
+                _exit(1);
+            }
+        }
+    }
+
+    // Parent process: close all pipes and wait for children
+    for (size_t i = 0; i < pipes.size(); ++i) {
+        close(pipes[i]);
+    }
+
+    for (pid_t pid : pids) {
+        int status;
+        waitpid(pid, &status, 0);
+    }
 }
 
 int main() {
@@ -259,8 +416,15 @@ int main() {
 
     setup_completion(builtins);
 
+    // Initialize readline history
+    using_history();
+
+    // Load existing history file if it exists
+    string history_file = string(getenv("HOME") ? getenv("HOME") : "") + "/.shell_history";
+    read_history(history_file.c_str());
+
     while (true) {
-        char* line = readline("$ ");
+        char *line = readline("$ ");
 
         if (!line) {
             cout << endl;
@@ -270,62 +434,53 @@ int main() {
         string input(line);
         free(line);
 
-        auto iss = istringstream(input);
-        auto [cmd, args] = parse_args(iss);
-
-        ostream &out = get_output_stream(args);
-        ostream &err = get_error_stream(args);
-        discard_redirection_args(args);
-
-        if (should_exit(cmd, args))
-            break;
-
-        if (cmd == "type") {
-
-            auto name = args[0];
-
-            if (builtins.contains(name)) {
-                out << name << " is a shell builtin" << endl;
-                continue;
+        // Add non-empty commands to history (avoid consecutive duplicates)
+        if (!input.empty()) {
+            if (history_length == 0 || strcmp(input.c_str(), history_get(history_length)->line) != 0) {
+                add_history(input.c_str());
             }
-
-            string file_path = get_cmd_file_path(name);
-
-            if (!file_path.empty())
-                out << name << " is " << file_path << endl;
-            else
-                out << name << ": not found" << endl;
-
-        } else if (cmd == "cd") {
-
-            fs::path p(args.size() ? args[0] : "~");
-            if (p == "~")
-                p = getenv("HOME");
-            if (!set_current_path(p))
-                out << "cd: " << p.string() << ": No such file or directory" << endl;
-
-        } else if (cmd == "echo") {
-
-            for (auto &arg : args)
-                out << arg << " ";
-            out << endl;
-
-        } else if (cmd == "pwd") {
-
-            out << get_current_path() << endl;
-
-        } else if (get_cmd_file_path(cmd).empty()) {
-
-            out << cmd << ": command not found" << endl;
-
-        } else {
-
-            exec(cmd, args, out, err);
         }
 
-        maybe_close(out, cout);
-        maybe_close(err, cerr);
+        auto iss = istringstream(input);
+        auto tokens = parse_tokens(iss);
+
+        if (tokens.empty())
+            continue;
+
+        auto commands = parse_pipeline(tokens);
+
+        if (commands.size() == 1) {
+            // Single command - use existing logic
+            const string &cmd = commands[0].cmd;
+            vector<string> &args = commands[0].args;
+
+            ostream &out = get_output_stream(args);
+            ostream &err = get_error_stream(args);
+            discard_redirection_args(args);
+
+            if (should_exit(cmd, args))
+                break;
+
+            if (is_builtin(cmd, builtins)) {
+                execute_builtin(cmd, args, builtins, out, err);
+
+            } else if (get_cmd_file_path(cmd).empty()) {
+                out << cmd << ": command not found" << endl;
+
+            } else {
+                exec(cmd, args, out, err);
+            }
+
+            maybe_close(out, cout);
+            maybe_close(err, cerr);
+        } else {
+            // Multi-command pipeline
+            exec_pipeline(commands, builtins);
+        }
     }
+
+    // Save history to file before exit
+    write_history(history_file.c_str());
 
     return 0;
 }
