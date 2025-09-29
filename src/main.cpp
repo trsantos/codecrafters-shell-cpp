@@ -333,6 +333,19 @@ void execute_builtin(const string &cmd, vector<string> &args, const unordered_se
                 }
                 file.close();
             }
+        } else if (!args.empty() && args[0] == "-w" && args.size() > 1) {
+            // Write history to file
+            string filepath = args[1];
+            ofstream file(filepath);
+            if (file.is_open()) {
+                for (int i = 1; i <= history_length; ++i) {
+                    HIST_ENTRY *entry = history_get(i);
+                    if (entry) {
+                        file << entry->line << "\n";
+                    }
+                }
+                file.close();
+            }
         } else {
             // Display history
             int limit = history_length;
