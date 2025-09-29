@@ -231,6 +231,27 @@ void maybe_close(ostream &stream, ostream &default_stream) {
             f->close();
 }
 
+void setup_fd_redirection(vector<string> &args) {
+    ostream &out = get_output_stream(args);
+    ostream &err = get_error_stream(args);
+
+    // Set up file descriptor redirection using native handles
+    if (&out != &cout) {
+        auto *file_stream = dynamic_cast<ofstream *>(&out);
+        auto fd = file_stream->native_handle();
+        dup2(fd, STDOUT_FILENO);
+    }
+
+    if (&err != &cerr) {
+        auto *file_stream = dynamic_cast<ofstream *>(&err);
+        auto fd = file_stream->native_handle();
+        dup2(fd, STDERR_FILENO);
+    }
+
+    // Remove redirection arguments
+    discard_redirection_args(args);
+}
+
 // Tab completion functionality
 const unordered_set<string> *current_builtins = nullptr;
 
@@ -293,8 +314,10 @@ void execute_builtin(const string &cmd, vector<string> &args, const unordered_se
         if (!set_current_path(p))
             out << "cd: " << p.string() << ": No such file or directory" << endl;
     } else if (cmd == "echo") {
-        for (auto &arg : args)
-            out << arg << " ";
+        for (size_t i = 0; i < args.size(); ++i) {
+            if (i > 0) out << " ";
+            out << args[i];
+        }
         out << endl;
     } else if (cmd == "pwd") {
         out << get_current_path() << endl;
@@ -352,33 +375,15 @@ void exec_pipeline(vector<Command> &commands, const unordered_set<string> &built
 
             // Try builtin first
             if (is_builtin(cmd, builtins)) {
+                setup_fd_redirection(args);
                 execute_builtin(cmd, args, builtins);
                 _exit(0);
             } else if (get_cmd_file_path(cmd).empty()) {
                 cout << cmd << ": command not found" << endl;
                 _exit(1);
             } else {
-                // External command - handle file redirection using existing functions
-
-                // Use existing redirection functions
-                ostream &out = get_output_stream(args);
-                ostream &err = get_error_stream(args);
-
-                // Set up file descriptor redirection using native handles (C++26)
-                if (&out != &cout) {
-                    auto *file_stream = dynamic_cast<ofstream *>(&out);
-                    auto fd = file_stream->native_handle();
-                    dup2(fd, STDOUT_FILENO);
-                }
-
-                if (&err != &cerr) {
-                    auto *file_stream = dynamic_cast<ofstream *>(&err);
-                    auto fd = file_stream->native_handle();
-                    dup2(fd, STDERR_FILENO);
-                }
-
-                // Remove redirection arguments before exec
-                discard_redirection_args(args);
+                // External command - handle file redirection
+                setup_fd_redirection(args);
 
                 // Build argv
                 vector<char *> argv;
