@@ -25,6 +25,9 @@ namespace fs = filesystem;
 // (used by history -a to only append current session commands)
 int g_session_start = 0;
 
+// Type alias for builtin command functions
+using BuiltinFunc = function<void(vector<string>&, ostream&, ostream&)>;
+
 bool should_exit(const string &cmd, const vector<string> &args) {
     return cmd == "exit" && !args.empty() && args[0] == "0";
 }
@@ -307,99 +310,120 @@ void setup_completion(const unordered_set<string> &builtins) {
     rl_attempted_completion_function = command_completion;
 }
 
-bool is_builtin(const string &cmd, const unordered_set<string> &builtins) { return builtins.contains(cmd); }
+// Builtin command implementations
 
-void execute_builtin(const string &cmd, vector<string> &args, const unordered_set<string> &builtins,
-                     ostream &out = cout, ostream &err = cerr) {
-    if (cmd == "cd") {
-        fs::path p(args.size() ? args[0] : "~");
-        if (p == "~")
-            p = getenv("HOME");
-        if (!set_current_path(p))
-            out << "cd: " << p.string() << ": No such file or directory" << endl;
-    } else if (cmd == "echo") {
-        for (size_t i = 0; i < args.size(); ++i) {
-            if (i > 0) out << " ";
-            out << args[i];
+void builtin_cd(vector<string> &args, ostream &out, ostream &err) {
+    fs::path p(args.size() ? args[0] : "~");
+    if (p == "~")
+        p = getenv("HOME");
+    if (!set_current_path(p))
+        out << "cd: " << p.string() << ": No such file or directory" << endl;
+}
+
+void builtin_echo(vector<string> &args, ostream &out, ostream &err) {
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (i > 0) out << " ";
+        out << args[i];
+    }
+    out << endl;
+}
+
+void builtin_pwd(vector<string> &args, ostream &out, ostream &err) {
+    out << get_current_path() << endl;
+}
+
+void builtin_history(vector<string> &args, ostream &out, ostream &err) {
+    static unordered_map<string, int> last_appended_position;
+
+    if (!args.empty() && args[0] == "-r" && args.size() > 1) {
+        // Read history from file
+        string filepath = args[1];
+        ifstream file(filepath);
+        if (file.is_open()) {
+            string line;
+            while (getline(file, line)) {
+                if (!line.empty()) {
+                    add_history(line.c_str());
+                }
+            }
+            file.close();
         }
-        out << endl;
-    } else if (cmd == "history") {
-        static unordered_map<string, int> last_appended_position;
-
-        if (!args.empty() && args[0] == "-r" && args.size() > 1) {
-            // Read history from file
-            string filepath = args[1];
-            ifstream file(filepath);
-            if (file.is_open()) {
-                string line;
-                while (getline(file, line)) {
-                    if (!line.empty()) {
-                        add_history(line.c_str());
-                    }
-                }
-                file.close();
-            }
-        } else if (!args.empty() && args[0] == "-w" && args.size() > 1) {
-            // Write history to file
-            string filepath = args[1];
-            ofstream file(filepath);
-            if (file.is_open()) {
-                for (int i = 1; i <= history_length; ++i) {
-                    HIST_ENTRY *entry = history_get(i);
-                    if (entry) {
-                        file << entry->line << "\n";
-                    }
-                }
-                file.close();
-                last_appended_position[filepath] = history_length;
-            }
-        } else if (!args.empty() && args[0] == "-a" && args.size() > 1) {
-            // Append new history from current session to file
-            string filepath = args[1];
-            int start_pos = max(g_session_start, last_appended_position[filepath]) + 1;
-
-            ofstream file(filepath, ios::app);
-            if (file.is_open()) {
-                for (int i = start_pos; i <= history_length; ++i) {
-                    HIST_ENTRY *entry = history_get(i);
-                    if (entry) {
-                        file << entry->line << "\n";
-                    }
-                }
-                file.close();
-                last_appended_position[filepath] = history_length;
-            }
-        } else {
-            // Display history
-            int limit = history_length;
-            if (!args.empty()) {
-                limit = stoi(args[0]);
-            }
-            int start = max(1, history_length - limit + 1);
-            for (int i = start; i <= history_length; ++i) {
+    } else if (!args.empty() && args[0] == "-w" && args.size() > 1) {
+        // Write history to file
+        string filepath = args[1];
+        ofstream file(filepath);
+        if (file.is_open()) {
+            for (int i = 1; i <= history_length; ++i) {
                 HIST_ENTRY *entry = history_get(i);
                 if (entry) {
-                    out << format("    {}  {}\n", i, entry->line);
+                    file << entry->line << "\n";
                 }
             }
+            file.close();
+            last_appended_position[filepath] = history_length;
         }
-    } else if (cmd == "pwd") {
-        out << get_current_path() << endl;
-    } else if (cmd == "type") {
-        auto name = args[0];
-        if (builtins.contains(name)) {
-            out << name << " is a shell builtin" << endl;
-        } else {
-            string file_path = get_cmd_file_path(name);
-            if (!file_path.empty())
-                out << name << " is " << file_path << endl;
-            else
-                out << name << ": not found" << endl;
+    } else if (!args.empty() && args[0] == "-a" && args.size() > 1) {
+        // Append new history from current session to file
+        string filepath = args[1];
+        int start_pos = max(g_session_start, last_appended_position[filepath]) + 1;
+
+        ofstream file(filepath, ios::app);
+        if (file.is_open()) {
+            for (int i = start_pos; i <= history_length; ++i) {
+                HIST_ENTRY *entry = history_get(i);
+                if (entry) {
+                    file << entry->line << "\n";
+                }
+            }
+            file.close();
+            last_appended_position[filepath] = history_length;
+        }
+    } else {
+        // Display history
+        int limit = history_length;
+        if (!args.empty()) {
+            limit = stoi(args[0]);
+        }
+        int start = max(1, history_length - limit + 1);
+        for (int i = start; i <= history_length; ++i) {
+            HIST_ENTRY *entry = history_get(i);
+            if (entry) {
+                out << format("    {}  {}\n", i, entry->line);
+            }
         }
     }
 }
 
-void exec_pipeline(vector<Command> &commands, const unordered_set<string> &builtins) {
+// Forward declare the registry for type builtin
+// (will be defined in main)
+extern unordered_map<string, BuiltinFunc> builtin_registry;
+
+void builtin_type(vector<string> &args, ostream &out, ostream &err) {
+    auto name = args[0];
+    if (builtin_registry.contains(name)) {
+        out << name << " is a shell builtin" << endl;
+    } else {
+        string file_path = get_cmd_file_path(name);
+        if (!file_path.empty())
+            out << name << " is " << file_path << endl;
+        else
+            out << name << ": not found" << endl;
+    }
+}
+
+bool is_builtin(const string &cmd, const unordered_map<string, BuiltinFunc> &registry) {
+    return registry.contains(cmd);
+}
+
+void execute_builtin(const string &cmd, vector<string> &args, const unordered_map<string, BuiltinFunc> &registry,
+                     ostream &out = cout, ostream &err = cerr) {
+    auto it = registry.find(cmd);
+    if (it != registry.end()) {
+        it->second(args, out, err);
+    }
+}
+
+void exec_pipeline(vector<Command> &commands, const unordered_map<string, BuiltinFunc> &registry) {
     vector<int> pipes((commands.size() - 1) * 2);
     vector<pid_t> pids(commands.size());
 
@@ -438,9 +462,9 @@ void exec_pipeline(vector<Command> &commands, const unordered_set<string> &built
             vector<string> &args = commands[i].args;
 
             // Try builtin first
-            if (is_builtin(cmd, builtins)) {
+            if (is_builtin(cmd, registry)) {
                 setup_fd_redirection(args);
-                execute_builtin(cmd, args, builtins);
+                execute_builtin(cmd, args, registry);
                 _exit(0);
             } else if (get_cmd_file_path(cmd).empty()) {
                 cout << cmd << ": command not found" << endl;
@@ -476,11 +500,25 @@ void exec_pipeline(vector<Command> &commands, const unordered_set<string> &built
     }
 }
 
+// Define the builtin registry (used by builtin_type)
+unordered_map<string, BuiltinFunc> builtin_registry;
+
 int main() {
     // Flush after every std::cout / std:cerr
     cout << unitbuf;
     cerr << unitbuf;
 
+    // Create builtin registry
+    builtin_registry["cd"] = builtin_cd;
+    builtin_registry["echo"] = builtin_echo;
+    builtin_registry["pwd"] = builtin_pwd;
+    builtin_registry["type"] = builtin_type;
+    builtin_registry["history"] = builtin_history;
+    // Note: exit is not in the registry because it's handled specially by should_exit()
+    // but we need it for type command
+    builtin_registry["exit"] = [](vector<string>&, ostream&, ostream&) {};
+
+    // Legacy set for compatibility (will be removed)
     unordered_set<string> builtins = {"cd", "echo", "exit", "history", "pwd", "type"};
 
     setup_completion(builtins);
@@ -536,8 +574,8 @@ int main() {
             if (should_exit(cmd, args))
                 break;
 
-            if (is_builtin(cmd, builtins)) {
-                execute_builtin(cmd, args, builtins, out, err);
+            if (is_builtin(cmd, builtin_registry)) {
+                execute_builtin(cmd, args, builtin_registry, out, err);
 
             } else if (get_cmd_file_path(cmd).empty()) {
                 out << cmd << ": command not found" << endl;
@@ -550,7 +588,7 @@ int main() {
             maybe_close(err, cerr);
         } else {
             // Multi-command pipeline
-            exec_pipeline(commands, builtins);
+            exec_pipeline(commands, builtin_registry);
         }
     }
 
