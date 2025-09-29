@@ -320,7 +320,12 @@ void execute_builtin(const string &cmd, vector<string> &args, const unordered_se
         }
         out << endl;
     } else if (cmd == "history") {
-        for (int i = 1; i <= history_length; ++i) {
+        int limit = history_length;
+        if (!args.empty()) {
+            limit = stoi(args[0]);
+        }
+        int start = max(1, history_length - limit + 1);
+        for (int i = start; i <= history_length; ++i) {
             HIST_ENTRY *entry = history_get(i);
             if (entry) {
                 out << format("    {}  {}\n", i, entry->line);
