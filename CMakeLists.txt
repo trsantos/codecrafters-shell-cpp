@@ -87,3 +87,61 @@ add_test(
             "printf '\\necho alpha | wc -c\\nexit\\n' | HISTFILE=/tmp/shell_cov_hist_pipeline ./shell >/tmp/shell_cov_pipeline_out.txt 2>/tmp/shell_cov_pipeline_err.txt"
 )
 set_tests_properties(shell_pipeline_test PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+set(SHELL_TEST_EXECUTABLE_TARGETS
+    parser_tests
+    redirection_tests
+    path_resolver_tests
+    history_manager_tests
+    builtin_registry_tests
+    completion_tests
+    process_executor_tests
+    exception_coverage_tests
+)
+
+add_custom_target(
+    check
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    USES_TERMINAL
+    DEPENDS shell ${SHELL_TEST_EXECUTABLE_TARGETS}
+)
+
+set(SHELL_COVERAGE_GCNO_FILES
+    CMakeFiles/shell_core.dir/src/app/shell_app.cpp.gcno
+    CMakeFiles/shell_core.dir/src/builtins/builtin_registry.cpp.gcno
+    CMakeFiles/shell_core.dir/src/core/parser.cpp.gcno
+    CMakeFiles/shell_core.dir/src/core/path_resolver.cpp.gcno
+    CMakeFiles/shell_core.dir/src/core/tokenizer.cpp.gcno
+    CMakeFiles/shell_core.dir/src/execution/process_executor.cpp.gcno
+    CMakeFiles/shell_core.dir/src/execution/redirection.cpp.gcno
+    CMakeFiles/shell_core.dir/src/history/history_manager.cpp.gcno
+    CMakeFiles/shell_core.dir/src/line_editing/completion.cpp.gcno
+    CMakeFiles/shell.dir/src/main.cpp.gcno
+)
+
+set(SHELL_COVERAGE_GCOV_FILES
+    shell_app.cpp.gcov
+    builtin_registry.cpp.gcov
+    parser.cpp.gcov
+    path_resolver.cpp.gcov
+    tokenizer.cpp.gcov
+    process_executor.cpp.gcov
+    redirection.cpp.gcov
+    history_manager.cpp.gcov
+    completion.cpp.gcov
+    main.cpp.gcov
+)
+
+string(JOIN " " SHELL_COVERAGE_GCNO_FILES_JOINED ${SHELL_COVERAGE_GCNO_FILES})
+string(JOIN " " SHELL_COVERAGE_GCOV_FILES_JOINED ${SHELL_COVERAGE_GCOV_FILES})
+
+configure_file(cmake/gcov_report.sh.in ${CMAKE_BINARY_DIR}/coverage_report.sh @ONLY)
+
+add_custom_target(
+    coverage-report
+    COMMAND sh ${CMAKE_BINARY_DIR}/coverage_report.sh
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    USES_TERMINAL
+    DEPENDS check
+)

@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+set -eu
+
+GCNO_FILES="@SHELL_COVERAGE_GCNO_FILES_JOINED@"
+GCOV_FILES="@SHELL_COVERAGE_GCOV_FILES_JOINED@"
+
+first_gcno=$(printf '%s\n' $GCNO_FILES | head -n 1)
+if [ ! -f "$first_gcno" ]; then
+    echo "coverage-report requires a coverage-enabled build (for example: -DCMAKE_CXX_FLAGS='--coverage -O0 -g')." >&2
+    exit 1
+fi
+
+rm -f -- ./*.gcov
+gcov $GCNO_FILES >/dev/null
+
+echo "Coverage summary (project sources):"
+for gcov_file in $GCOV_FILES; do
+    awk '
+        BEGIN { executed = 0; hit = 0; missed = 0 }
+        /^[[:space:]]*[0-9]+:/ { executed++; if ($1 + 0 > 0) hit++; else missed++ }
+        /^[[:space:]]*#####:/{ executed++; missed++ }
+        /^[[:space:]]*=====:/{ executed++; missed++ }
+        END {
+            pct = (executed ? 100 * hit / executed : 100)
+            printf "%s %.2f%%\n", FILENAME, pct
+        }
+    ' "$gcov_file"
+done
