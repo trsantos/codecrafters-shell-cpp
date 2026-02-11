@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <set>
 #include <string>
 
@@ -53,15 +54,19 @@ char *CompletionEngine::generator_callback(const char *text, int state) {
 }
 
 std::set<std::string> CompletionEngine::collect_matches(const std::string &prefix) const {
-    auto matches = path_resolver_.executable_candidates(prefix);
+    try {
+        auto matches = path_resolver_.executable_candidates(prefix);
 
-    for (const auto &builtin : builtin_registry_.names()) {
-        if (builtin.starts_with(prefix)) {
-            matches.insert(builtin);
+        for (const auto &builtin : builtin_registry_.names()) {
+            if (builtin.starts_with(prefix)) {
+                matches.insert(builtin);
+            }
         }
-    }
 
-    return matches;
+        return matches;
+    } catch (const std::exception &) {
+        return {};
+    }
 }
 
 } // namespace shell

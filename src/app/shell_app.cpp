@@ -48,9 +48,6 @@ int ShellApp::run() {
         }
 
         const Pipeline &pipeline = pipeline_result.value();
-        if (pipeline.empty()) {
-            continue;
-        }
 
         if (pipeline.stages.size() == 1) {
             process_executor_.execute_single(pipeline.stages.front(), builtin_registry_);

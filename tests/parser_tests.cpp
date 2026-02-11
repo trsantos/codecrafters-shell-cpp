@@ -19,6 +19,34 @@ void test_tokenizer_quotes_and_pipeline() {
     assert(tokens == expected);
 }
 
+void test_tokenizer_quotes_escapes_and_append_operators() {
+    Tokenizer tokenizer;
+
+    {
+        const auto tokens = tokenizer.tokenize(R"(echo "a\\b\"c")");
+        const std::vector<std::string> expected{"echo", R"(a\b"c)"};
+        assert(tokens == expected);
+    }
+
+    {
+        const auto tokens = tokenizer.tokenize(R"(echo "a\q")");
+        const std::vector<std::string> expected{"echo", R"(a\q)"};
+        assert(tokens == expected);
+    }
+
+    {
+        const auto tokens = tokenizer.tokenize(R"(echo 'x y' 1>> out.txt)");
+        const std::vector<std::string> expected{"echo", "x y", "1>>", "out.txt"};
+        assert(tokens == expected);
+    }
+
+    {
+        const auto tokens = tokenizer.tokenize("echo hi >> out.txt");
+        const std::vector<std::string> expected{"echo", "hi", ">>", "out.txt"};
+        assert(tokens == expected);
+    }
+}
+
 void test_parser_extracts_redirections() {
     Tokenizer tokenizer;
     Parser parser;
@@ -41,6 +69,20 @@ void test_parser_extracts_redirections() {
     assert(command.redirections[1].target == "err.txt");
 }
 
+void test_parser_parses_all_redirection_operators() {
+    Tokenizer tokenizer;
+    Parser parser;
+
+    const auto tokens = tokenizer.tokenize("echo hi 1>> out.txt 2> err.txt");
+    auto parsed = parser.parse(tokens);
+    assert(parsed.has_value());
+
+    const auto &command = parsed->stages.front();
+    assert(command.redirections.size() == 2);
+    assert(command.redirections[0].op == RedirectionOp::StdoutAppend);
+    assert(command.redirections[1].op == RedirectionOp::StderrTruncate);
+}
+
 void test_parser_rejects_invalid_syntax() {
     Tokenizer tokenizer;
     Parser parser;
@@ -53,6 +95,9 @@ void test_parser_rejects_invalid_syntax() {
 
     const auto trailing_pipe = tokenizer.tokenize("echo hi |");
     assert(!parser.parse(trailing_pipe).has_value());
+
+    const auto redirection_before_command = tokenizer.tokenize("> out.txt");
+    assert(!parser.parse(redirection_before_command).has_value());
 }
 
 void test_redirection_fd_digits_only_at_token_start() {
@@ -89,7 +134,9 @@ void test_redirection_fd_digits_only_at_token_start() {
 
 int main() {
     test_tokenizer_quotes_and_pipeline();
+    test_tokenizer_quotes_escapes_and_append_operators();
     test_parser_extracts_redirections();
+    test_parser_parses_all_redirection_operators();
     test_parser_rejects_invalid_syntax();
     test_redirection_fd_digits_only_at_token_start();
 

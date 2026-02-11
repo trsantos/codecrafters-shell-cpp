@@ -37,15 +37,11 @@ void PathResolver::scan_path_executables(
                 continue;
             }
 
-            const auto perms = fs::status(entry.path(), ec).permissions();
-            if (ec) {
-                continue;
-            }
-
             constexpr auto executable_bits =
                 fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec;
 
-            if ((perms & executable_bits) == fs::perms::none) {
+            const auto status = fs::status(entry.path(), ec);
+            if (ec || (status.permissions() & executable_bits) == fs::perms::none) {
                 continue;
             }
 

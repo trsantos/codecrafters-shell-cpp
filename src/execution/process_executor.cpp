@@ -31,6 +31,10 @@ namespace {
     return argv;
 }
 
+[[noreturn]] void child_exit(int code) {
+    std::exit(code);
+}
+
 } // namespace
 
 ProcessExecutor::ProcessExecutor(const PathResolver &path_resolver) : path_resolver_(path_resolver) {}
@@ -78,35 +82,7 @@ int ProcessExecutor::execute_pipeline(const Pipeline &pipeline, BuiltinRegistry 
         }
 
         if (pid == 0) {
-            if (i > 0) {
-                dup2(pipes[(i - 1) * 2], STDIN_FILENO);
-            }
-
-            if (i + 1 < pipeline.stages.size()) {
-                dup2(pipes[i * 2 + 1], STDOUT_FILENO);
-            }
-
-            for (const int fd : pipes) {
-                close(fd);
-            }
-
-            RedirectionGuard redirection_guard(command.redirections);
-            if (!redirection_guard.is_valid()) {
-                std::cerr << redirection_guard.error() << std::endl;
-                _exit(1);
-            }
-
-            if (builtin_registry.is_builtin(command.name)) {
-                const int status = builtin_registry.execute(command.name, command.args, std::cout, std::cerr);
-                _exit(status);
-            }
-
-            if (path_resolver_.find_command_path(command.name).empty()) {
-                std::cout << command.name << ": command not found" << std::endl;
-                _exit(127);
-            }
-
-            execute_external_in_child(command);
+            execute_pipeline_stage_in_child(command, i, pipeline.stages.size(), pipes, builtin_registry);
         }
 
         pids.push_back(pid);
@@ -137,11 +113,59 @@ int ProcessExecutor::execute_external(const Command &command) const {
     return wait_for_process(pid);
 }
 
-void ProcessExecutor::execute_external_in_child(const Command &command) const {
-    auto argv = build_argv(command);
-    execvp(command.name.c_str(), argv.data());
-    std::perror("exec failed");
-    _exit(1);
+void ProcessExecutor::execute_external_in_child(const Command &command) const noexcept {
+    try {
+        auto argv = build_argv(command);
+        execvp(command.name.c_str(), argv.data());
+        std::perror("exec failed");
+    } catch (const std::exception &error) {
+        std::cerr << error.what() << std::endl;
+    }
+
+    child_exit(1);
+}
+
+void ProcessExecutor::execute_pipeline_stage_in_child(
+    const Command &command,
+    std::size_t stage_index,
+    std::size_t stage_count,
+    std::span<const int> pipes,
+    BuiltinRegistry &builtin_registry) const noexcept {
+    try {
+        if (stage_index > 0) {
+            dup2(pipes[(stage_index - 1) * 2], STDIN_FILENO);
+        }
+
+        if (stage_index + 1 < stage_count) {
+            dup2(pipes[stage_index * 2 + 1], STDOUT_FILENO);
+        }
+
+        for (const int fd : pipes) {
+            close(fd);
+        }
+
+        RedirectionGuard redirection_guard(command.redirections);
+        if (!redirection_guard.is_valid()) {
+            std::cerr << redirection_guard.error() << std::endl;
+            child_exit(1);
+        }
+
+        if (builtin_registry.is_builtin(command.name)) {
+            const int status = builtin_registry.execute(command.name, command.args, std::cout, std::cerr);
+            child_exit(status);
+        }
+
+        if (path_resolver_.find_command_path(command.name).empty()) {
+            std::cout << command.name << ": command not found" << std::endl;
+            child_exit(127);
+        }
+
+        execute_external_in_child(command);
+    } catch (const std::exception &error) {
+        std::cerr << error.what() << std::endl;
+    }
+
+    child_exit(1);
 }
 
 int ProcessExecutor::wait_for_process(pid_t pid) {

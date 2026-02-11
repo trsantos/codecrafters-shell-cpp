@@ -10,6 +10,21 @@ namespace shell {
 
 namespace {
 
+int posix_dup(int fd) { return dup(fd); }
+
+int posix_open(const char *path, int flags, unsigned int mode) { return open(path, flags, mode); }
+
+int posix_dup2(int old_fd, int new_fd) { return dup2(old_fd, new_fd); }
+
+int posix_close(int fd) { return close(fd); }
+
+const RedirectionSyscalls default_syscalls{
+    .dup_fn = &posix_dup,
+    .open_fn = &posix_open,
+    .dup2_fn = &posix_dup2,
+    .close_fn = &posix_close,
+};
+
 [[nodiscard]] int target_fd_for(RedirectionOp op) {
     switch (op) {
     case RedirectionOp::StdoutTruncate:
@@ -38,7 +53,8 @@ namespace {
 
 } // namespace
 
-RedirectionGuard::RedirectionGuard(std::span<const Redirection> redirections) {
+RedirectionGuard::RedirectionGuard(std::span<const Redirection> redirections, const RedirectionSyscalls *syscalls)
+    : syscalls_(syscalls != nullptr ? syscalls : &default_syscalls) {
     for (const auto &redirection : redirections) {
         if (!apply_redirection(redirection)) {
             valid_ = false;
@@ -58,7 +74,7 @@ bool RedirectionGuard::apply_redirection(const Redirection &redirection) {
     const int target_fd = target_fd_for(redirection.op);
 
     if (find_backup_fd(target_fd) == -1) {
-        const int backup_fd = dup(target_fd);
+        const int backup_fd = syscalls_->dup_fn(target_fd);
         if (backup_fd == -1) {
             error_ = std::format("failed to save file descriptor {}: {}", target_fd, std::strerror(errno));
             return false;
@@ -67,26 +83,26 @@ bool RedirectionGuard::apply_redirection(const Redirection &redirection) {
         saved_fds_.push_back(SavedFd{.target_fd = target_fd, .backup_fd = backup_fd});
     }
 
-    const int redirected_fd = open(redirection.target.c_str(), open_flags_for(redirection.op), 0644);
+    const int redirected_fd = syscalls_->open_fn(redirection.target.c_str(), open_flags_for(redirection.op), 0644);
     if (redirected_fd == -1) {
         error_ = std::format("failed to open '{}': {}", redirection.target, std::strerror(errno));
         return false;
     }
 
-    if (dup2(redirected_fd, target_fd) == -1) {
+    if (syscalls_->dup2_fn(redirected_fd, target_fd) == -1) {
         error_ = std::format("failed to redirect file descriptor {}: {}", target_fd, std::strerror(errno));
-        close(redirected_fd);
+        syscalls_->close_fn(redirected_fd);
         return false;
     }
 
-    close(redirected_fd);
+    syscalls_->close_fn(redirected_fd);
     return true;
 }
 
 void RedirectionGuard::restore() noexcept {
     for (auto it = saved_fds_.rbegin(); it != saved_fds_.rend(); ++it) {
-        dup2(it->backup_fd, it->target_fd);
-        close(it->backup_fd);
+        syscalls_->dup2_fn(it->backup_fd, it->target_fd);
+        syscalls_->close_fn(it->backup_fd);
     }
 
     saved_fds_.clear();
