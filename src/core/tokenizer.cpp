@@ -62,7 +62,9 @@ std::vector<std::string> Tokenizer::tokenize(std::string_view input) const {
                 continue;
             }
 
-            if ((current == '1' || current == '2') && i + 1 < input.size() && input[i + 1] == '>') {
+            if (
+                token.empty() && (current == '1' || current == '2') && i + 1 < input.size() &&
+                input[i + 1] == '>') {
                 flush_token();
                 std::string op;
                 op.push_back(current);

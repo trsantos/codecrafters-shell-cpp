@@ -55,12 +55,43 @@ void test_parser_rejects_invalid_syntax() {
     assert(!parser.parse(trailing_pipe).has_value());
 }
 
+void test_redirection_fd_digits_only_at_token_start() {
+    Tokenizer tokenizer;
+    Parser parser;
+
+    {
+        const auto tokens = tokenizer.tokenize("echo hi1>/tmp/out");
+        const std::vector<std::string> expected{"echo", "hi1", ">", "/tmp/out"};
+        assert(tokens == expected);
+
+        auto parsed = parser.parse(tokens);
+        assert(parsed.has_value());
+        const auto &command = parsed->stages.front();
+        assert(command.args == std::vector<std::string>({"hi1"}));
+        assert(command.redirections.size() == 1);
+        assert(command.redirections.front().op == RedirectionOp::StdoutTruncate);
+    }
+
+    {
+        const auto tokens = tokenizer.tokenize("echo v2>/tmp/out");
+        const std::vector<std::string> expected{"echo", "v2", ">", "/tmp/out"};
+        assert(tokens == expected);
+    }
+
+    {
+        const auto tokens = tokenizer.tokenize("echo 2>/tmp/err");
+        const std::vector<std::string> expected{"echo", "2>", "/tmp/err"};
+        assert(tokens == expected);
+    }
+}
+
 } // namespace
 
 int main() {
     test_tokenizer_quotes_and_pipeline();
     test_parser_extracts_redirections();
     test_parser_rejects_invalid_syntax();
+    test_redirection_fd_digits_only_at_token_start();
 
     return 0;
 }
