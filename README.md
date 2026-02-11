@@ -1,34 +1,72 @@
+# CodeCrafters Shell (C++)
+
 [![progress-banner](https://backend.codecrafters.io/progress/shell/088affdf-fea3-4ce4-a156-0dd9b6f9113b)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
 
-This is a starting point for C++ solutions to the
-["Build Your Own Shell" Challenge](https://app.codecrafters.io/courses/shell/overview).
+Implementation of the CodeCrafters **"Build Your Own Shell"** challenge in modern C++.
+This shell provides a readline-based REPL, builtin commands, command execution, redirection, and pipelines.
 
-In this challenge, you'll build your own POSIX compliant shell that's capable of
-interpreting shell commands, running external programs and builtin commands like
-cd, pwd, echo and more. Along the way, you'll learn about shell command parsing,
-REPLs, builtin commands, and more.
+## Features
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+- Interactive prompt with GNU Readline completion support.
+- Builtins: `cd`, `echo`, `pwd`, `type`, `history`, `exit`.
+- External command execution via `fork`/`execvp`.
+- Pipelines (`|`) across multiple commands.
+- Redirection operators: `>`, `>>`, `1>`, `1>>`, `2>`, `2>>`.
+- Persistent command history (`HISTFILE`, default `~/.shell_history`).
 
-# Passing the first stage
+## Project Layout
 
-The entry point for your `shell` implementation is in `src/main.cpp`. Study and
-uncomment the relevant code, and push your changes to pass the first stage:
+- `src/main.cpp`: program entrypoint.
+- `src/app/`: REPL loop orchestration.
+- `src/core/`: tokenizer, parser, PATH resolution.
+- `src/execution/`: process launching and redirection.
+- `src/builtins/`, `src/history/`, `src/line_editing/`: shell capabilities.
+- `tests/`: executable unit/integration-style tests registered with CTest.
+
+## Prerequisites
+
+- CMake 3.13+
+- A recent C++ compiler (project is configured with `CMAKE_CXX_STANDARD 26`)
+- GNU Readline development headers/library
+- `vcpkg` with `VCPKG_ROOT` set (used by `your_program.sh`)
+
+## Build and Run
 
 ```sh
-git commit -am "pass 1st stage" # any msg
+cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake
+cmake --build build
+./build/shell
+```
+
+Or use the helper script:
+
+```sh
+./your_program.sh
+```
+
+## Tests and Coverage
+
+Run the full test suite:
+
+```sh
+cmake --build build --target check
+# or
+ctest --test-dir build --output-on-failure
+```
+
+Generate a gcov report:
+
+```sh
+cmake -B build-coverage -S . -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS='--coverage -O0 -g' -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake
+cmake --build build-coverage --target coverage-report
+```
+
+## CodeCrafters Workflow
+
+Submit progress to CodeCrafters with:
+
+```sh
 git push origin master
 ```
 
-Time to move on to the next stage!
-
-# Stage 2 & beyond
-
-Note: This section is for stages 2 and beyond.
-
-1. Ensure you have `cmake` installed locally
-1. Run `./your_program.sh` to run your program, which is implemented in
-   `src/main.cpp`.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
+Local compile/run behavior can be adjusted in `.codecrafters/compile.sh` and `.codecrafters/run.sh`.
